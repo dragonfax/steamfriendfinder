@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"appengine"
 	"appengine/datastore"
@@ -121,7 +122,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		playerName := response.Response.Players[0].Personaname
+
 		online := response.Response.Players[0].Gameextrainfo == "Team Fortress 2"
+
+		if online {
+			c.Debugf("%v %s is Online", playerName, time.Now())
+		} else {
+			c.Debugf("%v %s is Offline", playerName, time.Now())
+		}
 
 		record, err := GetRecord(c, steamid)
 		if err != nil {
@@ -144,7 +153,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		if newlyOnline {
 			msg := &mail.Message{
 				Sender:  "admin@steamfriendfinder.appspotmail.com",
-				Subject: fmt.Sprintf("%s is playing Team Fortress 2", response.Response.Players[0].Personaname),
+				Subject: fmt.Sprintf("%s is playing Team Fortress 2", playerName),
 			}
 			if err := mail.SendToAdmins(c, msg); err != nil {
 				c.Errorf("Couldn't send email: %v", err)
