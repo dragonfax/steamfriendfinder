@@ -1,4 +1,4 @@
 cron:
 - description: hourly check for users
   url: /
-  schedule: every 20 minutes
+  schedule: every 5 minutes

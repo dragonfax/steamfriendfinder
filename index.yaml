@@ -1,0 +1,5 @@
+indexes:
+- kind: Summary
+  ancestor: yes
+  properties:
+  - name: Steamid

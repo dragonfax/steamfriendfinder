@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"appengine"
+	"appengine/datastore"
 	"appengine/mail"
 	"appengine/urlfetch"
 )
@@ -39,8 +40,19 @@ $ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXX
 	}
 */
 
+func getEntityKey(c appengine.Context) *datastore.Key {
+	return datastore.NewKey(c, "Summaries", "default_summaries", 0, nil)
+}
+
+const KIND = "Summary"
+
 func init() {
 	http.HandleFunc("/", handler)
+}
+
+type Summary struct {
+	Steamid int64
+	Online  bool
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +84,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		response := struct {
 			Response struct {
 				Players []struct {
-					Steamid                  uint64 `json:"string"`
+					Steamid                  int64 `json:"string"`
 					Communityvisibilitystate uint
 					Profilestate             uint
 					Personaname              string
@@ -109,17 +121,58 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if response.Response.Players[0].Gameextrainfo == "Team Fortress 2" {
+		online := response.Response.Players[0].Gameextrainfo == "Team Fortress 2"
+
+		record, err := GetRecord(c, steamid)
+		if err != nil {
+			c.Errorf("failure to get record %v", err)
+			return
+		}
+
+		newlyOnline := online && !record.Online
+		newlyOffline := !online && record.Online
+
+		if newlyOnline || newlyOffline {
+			record.Online = online
+			err = SaveRecord(c, record)
+			if err != nil {
+				c.Errorf("failure to save record %v", err)
+				return
+			}
+		}
+
+		if newlyOnline {
 			msg := &mail.Message{
-				Sender:  "robot@steamfriendfinder.appspotmail.com",
-				To:      []string{EMAIL},
+				Sender:  "admin@steamfriendfinder.appspotmail.com",
 				Subject: fmt.Sprintf("%s is playing Team Fortress 2", response.Response.Players[0].Personaname),
 			}
-			if err := mail.Send(c, msg); err != nil {
+			if err := mail.SendToAdmins(c, msg); err != nil {
 				c.Errorf("Couldn't send email: %v", err)
 				return
 			}
 		}
 
 	}
+}
+
+func GetRecord(c appengine.Context, steamid int64) (Summary, error) {
+
+	summaries := make([]Summary, 0, 1)
+	_, err := datastore.NewQuery(KIND).Ancestor(getEntityKey(c)).Filter("Steamid =", steamid).GetAll(c, &summaries)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	if len(summaries) == 0 {
+		return Summary{Steamid: steamid, Online: false}, nil
+	} else {
+		return summaries[0], nil
+	}
+}
+
+func SaveRecord(c appengine.Context, record Summary) error {
+
+	_, err := datastore.Put(c, datastore.NewIncompleteKey(c, KIND, getEntityKey(c)), &record)
+
+	return err
 }
