@@ -159,6 +159,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				c.Errorf("Couldn't send email: %v", err)
 				return
 			}
+			c.Debugf("Sending email")
 		}
 
 	}
