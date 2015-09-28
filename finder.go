@@ -55,7 +55,7 @@ func init() {
 type PlayerSummariesResult struct {
 	Response struct {
 		Players []struct {
-			Steamid                  int64 `json:"string"`
+			Steamid                  int64 `json:",string"`
 			Communityvisibilitystate uint
 			Profilestate             uint
 			Personaname              string
@@ -66,11 +66,11 @@ type PlayerSummariesResult struct {
 			Avatarfull               string
 			Personastate             uint
 			Realname                 string
-			Primaryclanid            uint64 `json:"string"`
+			Primaryclanid            uint64 `json:",string"`
 			Timecreated              uint
 			Personastateflags        uint
 			Gameextrainfo            string
-			Gameid                   uint `json:"string"`
+			Gameid                   uint `json:",string"`
 			Loccountrycode           string
 		}
 	}
