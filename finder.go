@@ -135,7 +135,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	c := appengine.NewContext(r)
 
-	summaries, err := fetchPlayerSummaries(c)
+	var err error
+	var summaries *PlayerSummariesResult
+RETRY:
+	for i := 0; i < 3; i++ {
+		summaries, err = fetchPlayerSummaries(c)
+		if err == nil {
+			break RETRY
+		}
+	}
 	if err != nil {
 		c.Errorf("failed to retrieve player status: %v", err)
 		return
