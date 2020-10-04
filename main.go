@@ -1,17 +1,20 @@
-package sff
+package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
-	"appengine"
-	"appengine/datastore"
-	"appengine/mail"
-	"appengine/urlfetch"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"go.uber.org/zap"
+	"google.golang.org/appengine/mail"
+	"google.golang.org/appengine/urlfetch"
 )
 
 /*
@@ -23,14 +26,14 @@ $ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXX
 				"steamid": "76561197970839813",
 				"communityvisibilitystate": 3,
 				"profilestate": 1,
-				"personaname": "H311B0Y",
+				"personaname": "SuperCoolBoy",
 				"lastlogoff": 1443115849,
 				"profileurl": "http://steamcommunity.com/profiles/76561197970839813/",
 				"avatar": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09.jpg",
 				"avatarmedium": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_medium.jpg",
 				"avatarfull": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_full.jpg",
 				"personastate": 3,
-				"realname": "Chris Barnard",
+				"realname": "Some Fellow",
 				"primaryclanid": "103582791432065012",
 				"timecreated": 1100920678,
 				"personastateflags": 0,
@@ -42,43 +45,33 @@ $ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXX
 	}
 */
 
-func getEntityRootKey(c appengine.Context) *datastore.Key {
-	return datastore.NewKey(c, "Summaries", "default_summaries", 0, nil)
-}
+var awsSess = session.Must(session.NewSession())
+var dyndb = dynamodb.New(awsSess)
 
-const KIND = "Summary"
+var logger, _ = zap.NewProduction()
 
-func init() {
-	http.HandleFunc("/", handler)
+type FriendSummary struct {
+	Steamid                  int64
+	Communityvisibilitystate uint
+	Profilestate             uint
+	Personaname              string
+	Lastlogoff               uint
+	Profileurl               string
+	Avatar                   string
+	Avatarmedium             string
+	Avatarfull               string
+	Personastate             uint
+	Realname                 string
+	Timecreated              uint
+	Personastateflags        uint
+	Gameextrainfo            string
+	Gameid                   uint
 }
 
 type PlayerSummariesResult struct {
 	Response struct {
-		Players []struct {
-			Steamid                  int64 `json:",string"`
-			Communityvisibilitystate uint
-			Profilestate             uint
-			Personaname              string
-			Lastlogoff               uint
-			Profileurl               string
-			Avatar                   string
-			Avatarmedium             string
-			Avatarfull               string
-			Personastate             uint
-			Realname                 string
-			Primaryclanid            uint64 `json:",string"`
-			Timecreated              uint
-			Personastateflags        uint
-			Gameextrainfo            string
-			Gameid                   uint `json:",string"`
-			Loccountrycode           string
-		}
+		Players []*PlayerSummariesResult
 	}
-}
-
-type StoredSummary struct {
-	Steamid int64
-	Online  bool
 }
 
 func getPlayerSteamIdsString() string {
@@ -89,11 +82,7 @@ func getPlayerSteamIdsString() string {
 	return strings.Join(ss, ",")
 }
 
-func getPlayerCount() int {
-	return len(steamids)
-}
-
-func fetchPlayerSummaries(c appengine.Context) (*PlayerSummariesResult, error) {
+func fetchPlayerSummaries() (*PlayerSummariesResult, error) {
 
 	client := urlfetch.Client(c)
 
@@ -131,9 +120,16 @@ func fetchPlayerSummaries(c appengine.Context) (*PlayerSummariesResult, error) {
 	return &response, nil
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func handler(event Event) {
 
-	c := appengine.NewContext(r)
+	if isCronEvent {
+		handleCronEvent()
+	} else {
+		handleSQSEvent(event)
+	}
+}
+
+func handleCronEvent() {
 
 	var err error
 	var summaries *PlayerSummariesResult
@@ -145,7 +141,7 @@ RETRY:
 		}
 	}
 	if err != nil {
-		c.Errorf("failed to retrieve player status: %v", err)
+		logger.Error("failed to retrieve player status: %v", zap.Error(err))
 		return
 	}
 
@@ -156,14 +152,14 @@ RETRY:
 		online := playerSummary.Gameextrainfo == "Team Fortress 2"
 
 		if online {
-			c.Debugf("%v %s is Online", playerName, time.Now())
+			logger.Debug("friend is Online", zap.String("player", playerName))
 		} else {
-			c.Debugf("%v %s is Offline", playerName, time.Now())
+			logger.Debug("friend is Offline", zap.String("player", playerName))
 		}
 
 		record, err := GetRecord(c, playerSummary.Steamid)
 		if err != nil {
-			c.Errorf("failure to get record %v", err)
+			logger.Error("failure to get record", zap.Error(err))
 			return
 		}
 
@@ -174,7 +170,7 @@ RETRY:
 			record.Online = online
 			err = SaveRecord(c, record)
 			if err != nil {
-				c.Errorf("failure to save record %v", err)
+				logger.Error("failure to save record", zap.Error(err))
 				return
 			}
 		}
@@ -185,35 +181,82 @@ RETRY:
 				Subject: fmt.Sprintf("%s is playing Team Fortress 2", playerName),
 			}
 			if err := mail.SendToAdmins(c, msg); err != nil {
-				c.Errorf("Couldn't send email: %v", err)
+				logger.Error("Couldn't send email", zap.Error(err))
 				return
 			}
-			c.Debugf("Sending email")
+			logger.Debug("Sending email")
 		}
 
 	}
 }
 
-func GetRecord(c appengine.Context, steamid int64) (StoredSummary, error) {
+const friendsTable = "friends-history"
 
-	summaries := make([]StoredSummary, 0, 1)
-	_, err := datastore.NewQuery(KIND).Ancestor(getEntityRootKey(c)).Filter("__key__ =", getEntityKey(c, steamid)).GetAll(c, &summaries)
+func GetRecord(steamid int64) (*FriendSummary, error) {
+
+	output, err := dyndb.GetItem(&dynamodb.GetItemInput{
+		TableName: aws.String(friendsTable),
+		Key: map[string]*dynamodb.AttributeValue{
+			"steamid": {
+				N: aws.String(strconv.FormatInt(steamid, 10)),
+			},
+		},
+	})
 	if err != nil {
-		return StoredSummary{}, err
+		return nil, err
 	}
 
-	if len(summaries) == 0 {
-		return StoredSummary{Steamid: steamid, Online: false}, nil
-	} else {
-		return summaries[0], nil
+	item := output.Item
+	var friend FriendSummary
+	if item == nil {
+		// always return a valid friend
+		friend.Steamid = steamid
+		return &friend, nil
+	}
+
+	err = dynamodbattribute.UnmarshalMap(item, &friend)
+	if err != nil {
+		return nil, err
+	}
+
+	return &friend, nil
+}
+
+func SaveRecord(friend *FriendSummary) error {
+
+	av, err := dynamodbattribute.MarshalMap(friend)
+	if err != nil {
+		return err
+	}
+
+	var expressions = make([]string, 0)
+	for key, value := range av {
+		delete(av, key)
+		if key == "steamid" {
+			continue
+		}
+
+		av[":"+key] = value
+		expressions = append(expressions, fmt.Sprintf("%s = :%s", key, key))
+	}
+	updateExpression := "SET " + strings.Join(expression, ", ")
+
+	_, err := dyndb.UpdateItem(&dynamodb.UpdateItemInput{
+		TableName: aws.String(friendsTable),
+		Key: map[string]*dynamodb.AttributeValue{
+			"steamid": {
+				N: aws.String(strconv.FormatInt(steamid < 10)),
+			},
+		},
+		UpdateExpression:          &updateExpression,
+		ExpressionAttributeValues: av,
+	})
+
+	if err != nil {
+		return err
 	}
 }
 
-func getEntityKey(c appengine.Context, steamId int64) *datastore.Key {
-	return datastore.NewKey(c, KIND, "", int64(steamId), getEntityRootKey(c))
-}
-
-func SaveRecord(c appengine.Context, record StoredSummary) error {
-	_, err := datastore.Put(c, getEntityKey(c, record.Steamid), &record)
-	return err
+func main() {
+	http.HandleFunc("/", handler)
 }

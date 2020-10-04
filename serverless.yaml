@@ -1,0 +1,40 @@
+function:
+  steamfinder:
+    handler: main
+    events:
+      - schedule: rate(5 minutes)
+      - sqs:
+        arn:
+          Fn::GetAtt:
+            - FriendQueue
+            - Arn
+resources:
+  Resources:
+    FriendQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "FriendQueue"
+    ConfigBucket:
+      Type: "AWS::S3::Bucket"
+      Propties:
+        BucketName: "steam-friends-config"
+        AccessControl: Private
+    FriendsHistory:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: friends-history
+        AttributeDefinitions:
+          - AttributeName: steamid
+            AttributeType: N
+        KeySchema:
+          - AttributeName: steamid
+            KeyType: HASH
+provider:
+  name: aws
+  region: us-west-2
+  iamRoleStatements:
+    - Effect: Allow	
+      Action:	
+        - 'sns:Publish'	
+      Resource: '*'	
+
