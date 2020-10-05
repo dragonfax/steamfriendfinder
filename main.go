@@ -2,16 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strconv"
+	"os"
 	"strings"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/sns"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"go.uber.org/zap"
 )
 
@@ -57,6 +62,8 @@ var games = []string{
 	"526870",
 }
 
+const queueName = "FriendQueue"
+
 const friendsTable = "friends-history"
 const (
 	// personastate
@@ -75,6 +82,10 @@ const (
 
 var awsSess = session.Must(session.NewSession())
 var dyndb = dynamodb.New(awsSess)
+var sqsSess = sqs.New(awsSess)
+var snsSess = sns.New(awsSess)
+
+var queueURL *string
 
 var logger, _ = zap.NewProduction()
 
@@ -96,9 +107,9 @@ type PlayerSummariesResult struct {
 	}
 }
 
-func fetchPlayerSummaries(steamIDs []string) (*PlayerSummariesResult, error) {
+func fetchPlayerSummaries(steamIDs []string) ([]*FriendSummary, error) {
 
-	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", TOKEN, strings.Join(steamIDs, ","))
+	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", os.Getenv("STEAM_TOKEN"), strings.Join(steamIDs, ","))
 	logger.Debug("steam API url", zap.String("url", url))
 	resp, err := http.Get(url)
 	if err != nil {
@@ -121,24 +132,92 @@ func fetchPlayerSummaries(steamIDs []string) (*PlayerSummariesResult, error) {
 		return nil, fmt.Errorf("failure to read json %v", err)
 	}
 
-	if len(response.Response.Players) == 0 {
-		return nil, fmt.Errorf("not enough players in the response %d != %d", len(response.Response.Players), getPlayerCount())
-	}
-
-	if len(response.Response.Players) > getPlayerCount() {
-		return nil, fmt.Errorf("too many players in the response %d != %d", len(response.Response.Players), getPlayerCount())
-	}
-
-	return &response, nil
+	return response.Response.Players, nil
 }
 
-func handler(event Event) {
+type Event struct {
+	Records json.RawMessage
+}
 
-	if isCronEvent {
+func handler(eventJS []byte) {
+	logger.Info("incoming event", zap.String("event", string(eventJS)))
+
+	var event Event
+	err := json.Unmarshal(eventJS, &event)
+	if err != nil {
+		logger.Error("error while unmarshaling the incoming event", zap.Error(err), zap.String("event", string(eventJS)))
+		return
+	}
+
+	if event.Records == nil {
 		handleCronEvent()
 	} else {
-		handleSQSEvent(event)
+		// is SQS event
+		var events events.SQSEvent
+		err := json.Unmarshal(eventJS, &events)
+		if err != nil {
+			logger.Error("error while unmarshaling the incoming SQSEvent", zap.Error(err), zap.String("event", string(eventJS)))
+			return
+		}
+		handleSQSEvents(events)
 	}
+}
+
+func handleSQSEvents(sqsEvent events.SQSEvent) {
+
+	for _, message := range sqsEvent.Records {
+		err := handleSQSEvent(message)
+		if err != nil {
+			logger.Error("error occured during SQL event", zap.Error(err), zap.Any("message", message))
+			// we want to skip errored events, not retry them
+		}
+	}
+}
+
+func handleSQSEvent(message events.SQSMessage) error {
+
+	// get the steam id from the event.
+	steamID := *message.MessageAttributes["SteamID"].StringValue
+	name := *message.MessageAttributes["Name"].StringValue
+	game := *message.MessageAttributes["Game"].StringValue
+	gameID := *message.MessageAttributes["GameID"].StringValue
+
+	summaries, err := fetchPlayerSummaries([]string{steamID})
+	if err != nil {
+		return err
+	}
+
+	if len(summaries) != 1 {
+		return errors.New("no response from fetching a player")
+	}
+
+	if gameID == summaries[0].GameID {
+		err = notify(name, game)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func notify(name, game string) error {
+	_, err := snsSess.Publish(&sns.PublishInput{
+		PhoneNumber: aws.String(os.Getenv("PHONE_NUMBER")), // +1XXXXXXXXXX
+		Message:     aws.String(fmt.Sprintf("%s is playing %s", name, game)),
+		MessageAttributes: map[string]*sns.MessageAttributeValue{
+			"AWS.SNS.SMS.SMSType": {
+				StringValue: aws.String("Transactional"),
+			},
+			"AWS.SNS.SMS.MaxPrice": {
+				StringValue: aws.String("0.01"),
+			},
+			"AWS.SNS.SMS.SenderID": {
+				StringValue: aws.String("stmfriends"),
+			},
+		},
+	})
+	return err
 }
 
 func queryPlayerHistories() ([]*FriendSummary, error) {
@@ -188,7 +267,7 @@ func handleCronEvent() error {
 		return err
 	}
 
-	for _, summary := range summaries.Response.Players {
+	for _, summary := range summaries {
 
 		// no longer visible to us.
 		if !(summary.CommunityVisibilityState == VISIBLE && summary.PersonaState == ONLINE) {
@@ -196,7 +275,7 @@ func handleCronEvent() error {
 		}
 
 		// not in a game.
-		if summary.GameID == 0 {
+		if summary.GameID == "" {
 			continue
 		}
 
@@ -215,44 +294,62 @@ func handleCronEvent() error {
 			continue
 		}
 
-		notify(summary.PersonaName, summary.GameExtraInfo)
+		err := queue(summary)
+		if err != nil {
+			return nil
+		}
 
 	}
 
 	// save records
+	err = SaveFriends(summaries)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-/*
-func GetRecord(steamid int64) (*FriendSummary, error) {
+const queueMessageDelay = 60 * 60 * 10 // 10 minutes
 
-	output, err := dyndb.GetItem(&dynamodb.GetItemInput{
-		TableName: aws.String(friendsTable),
-		Key: map[string]*dynamodb.AttributeValue{
-			"steamid": {
-				N: aws.String(strconv.FormatInt(steamid, 10)),
+func queue(friend *FriendSummary) error {
+	_, err := sqsSess.SendMessage(&sqs.SendMessageInput{
+		DelaySeconds: aws.Int64(queueMessageDelay),
+		QueueUrl:     queueURL,
+		MessageAttributes: map[string]*sqs.MessageAttributeValue{
+			"SteamID": &sqs.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String(friend.SteamID),
+			},
+			"Name": &sqs.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String(friend.PersonaName),
+			},
+			"GameID": &sqs.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String(friend.GameID),
+			},
+			"Game": &sqs.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String(friend.GameExtraInfo),
 			},
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	item := output.Item
-	if item == nil {
-		return nil, errors.New("missing record for friend.")
-	}
-
-	var friend FriendSummary
-	err = dynamodbattribute.UnmarshalMap(item, &friend)
-	if err != nil {
-		return nil, err
-	}
-
-	return &friend, nil
+	return err
 }
-*/
 
-func SaveRecord(friend *FriendSummary) error {
+func SaveFriends(friends []*FriendSummary) error {
+	for _, friend := range friends {
+		err := SaveFriend(friend)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func SaveFriend(friend *FriendSummary) error {
 
 	av, err := dynamodbattribute.MarshalMap(friend)
 	if err != nil {
@@ -269,13 +366,13 @@ func SaveRecord(friend *FriendSummary) error {
 		av[":"+key] = value
 		expressions = append(expressions, fmt.Sprintf("%s = :%s", key, key))
 	}
-	updateExpression := "SET " + strings.Join(expression, ", ")
+	updateExpression := "SET " + strings.Join(expressions, ", ")
 
-	_, err := dyndb.UpdateItem(&dynamodb.UpdateItemInput{
+	_, err = dyndb.UpdateItem(&dynamodb.UpdateItemInput{
 		TableName: aws.String(friendsTable),
 		Key: map[string]*dynamodb.AttributeValue{
 			"steamid": {
-				N: aws.String(strconv.FormatInt(steamid < 10)),
+				N: aws.String(friend.SteamID),
 			},
 		},
 		UpdateExpression:          &updateExpression,
@@ -285,8 +382,19 @@ func SaveRecord(friend *FriendSummary) error {
 	if err != nil {
 		return err
 	}
+
+	return nil
 }
 
 func main() {
-	http.HandleFunc("/", handler)
+
+	output, err := sqsSess.GetQueueUrl(&sqs.GetQueueUrlInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		panic(err)
+	}
+	queueURL = output.QueueUrl
+
+	lambda.Start(handler)
 }
