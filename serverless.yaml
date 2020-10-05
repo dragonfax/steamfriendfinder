@@ -5,7 +5,7 @@ functions:
     handler: main
     events:
       - schedule: rate(1 minute)
-        enabled: false
+        enabled: true
       - sqs:
         arn:
           Fn::GetAtt:

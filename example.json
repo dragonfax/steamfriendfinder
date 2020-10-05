@@ -1,0 +1,90 @@
+
+steam response
+$ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXXXXX&steamids=76561197970839813'
+{
+	"response": {
+		"players": [
+			{
+				"steamid": "76561197970839813",
+				"communityvisibilitystate": 3,
+				"profilestate": 1,
+				"personaname": "SuperCoolBoy",
+				"lastlogoff": 1443115849,
+				"profileurl": "http://steamcommunity.com/profiles/76561197970839813/",
+				"avatar": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09.jpg",
+				"avatarmedium": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_medium.jpg",
+				"avatarfull": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_full.jpg",
+				"personastate": 3,
+				"realname": "Some Fellow",
+				"primaryclanid": "103582791432065012",
+				"timecreated": 1100920678,
+				"personastateflags": 0,
+				"gameextrainfo": "Team Fortress 2",
+				"gameid": "440",
+				"loccountrycode": "US"
+			}
+		]
+	}
+
+aws lambda cron event
+{
+	"version":"0",
+	"id":"b7a98e0c-aba9-7cfd-fa82-932bc343eb95",
+	"detail-type":"Scheduled Event",
+	"source":"aws.events",
+	"account":"623157150824",
+	"time":"2020-10-05T03:50:53Z",
+	"region":"us-west-2",
+	"resources":[
+		"arn:aws:events:us-west-2:623157150824:rule/steamfinder-dev-SteamfinderEventsRuleSchedule1-H1C1DNQNW6UY"
+	],
+	"detail":{}
+}
+
+aws lambda sqs event
+{
+  "Records": [
+    {
+      "messageId": "edd7e35a-864d-48f6-acc4-0f0d8356959c",
+      "receiptHandle": "AQEBXBMgQdu12o6uP1h/YY4yYBn2GRXrbTAdoMClORe4dlJR5/13XZ7/Gkt92PTBpWRYJbbJolbE0haXw5QW2JvcRZGbdpb3RaVT2HM0ZNunw7tscdUBOKtdBfE3gs/JgXb3c4c7+JqUXrCiXZD7rGWkyCTXLyUDrJ1rENlZAhBv4uDNeWIZybPes+hXa9VprRWA5V2hgHqDQik3GIutU7FDYPz/qO1wISDLXfwhtumyCg9DMmuplc/dAbdBpYEQG4VEhEpQY4Ooqb/ZHGsx/hI+dVgZTWCWLZTuxjfNy3/UJSmOFGEkdknCoe2IiG3r39payEx1ogTrxTnosGfdwrMc39ks3Fuq+Bu6vw+rtRWPJFFiiuiYY0PakZrnJx6toVWuC53r4awKbUFH/Aip1kMzTg==",
+      "body": "nothing",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1601884502037",
+        "SenderId": "AROAZCFYPQRUMTSJTAH3M:steamfinder-dev-steamfinder",
+        "ApproximateFirstReceiveTimestamp": "1601884504037"
+      },
+      "messageAttributes": {
+        "Game": {
+          "stringValue": "STAR WARS™: Squadrons",
+          "stringListValues": [],
+          "binaryListValues": [],
+          "dataType": "String"
+        },
+        "GameID": {
+          "stringValue": "1222730",
+          "stringListValues": [],
+          "binaryListValues": [],
+          "dataType": "String"
+        },
+        "Name": {
+          "stringValue": "Alchemistmerlin",
+          "stringListValues": [],
+          "binaryListValues": [],
+          "dataType": "String"
+        },
+        "SteamID": {
+          "stringValue": "76561197978169532",
+          "stringListValues": [],
+          "binaryListValues": [],
+          "dataType": "String"
+        }
+      },
+      "md5OfMessageAttributes": "de8616e24aef6415ed9dfb3c1fc0694a",
+      "md5OfBody": "3e47b75000b0924b6c9ba5759a7cf15d",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-west-2:623157150824:FriendQueue",
+      "awsRegion": "us-west-2"
+    }
+  ]
+}

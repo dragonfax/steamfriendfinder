@@ -21,47 +21,8 @@ import (
 )
 
 /*
-$ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXXXXX&steamids=76561197970839813'
-{
-	"response": {
-		"players": [
-			{
-				"steamid": "76561197970839813",
-				"communityvisibilitystate": 3,
-				"profilestate": 1,
-				"personaname": "SuperCoolBoy",
-				"lastlogoff": 1443115849,
-				"profileurl": "http://steamcommunity.com/profiles/76561197970839813/",
-				"avatar": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09.jpg",
-				"avatarmedium": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_medium.jpg",
-				"avatarfull": "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/06/060118081184c4b75b91cd0c2864b01414b26e09_full.jpg",
-				"personastate": 3,
-				"realname": "Some Fellow",
-				"primaryclanid": "103582791432065012",
-				"timecreated": 1100920678,
-				"personastateflags": 0,
-				"gameextrainfo": "Team Fortress 2",
-				"gameid": "440",
-				"loccountrycode": "US"
-			}
-		]
-	}
 
-aws lambda cron event
-{
-	"version":"0",
-	"id":"b7a98e0c-aba9-7cfd-fa82-932bc343eb95",
-	"detail-type":"Scheduled Event",
-	"source":"aws.events",
-	"account":"623157150824",
-	"time":"2020-10-05T03:50:53Z",
-	"region":"us-west-2",
-	"resources":[
-		"arn:aws:events:us-west-2:623157150824:rule/steamfinder-dev-SteamfinderEventsRuleSchedule1-H1C1DNQNW6UY"
-	],
-	"detail":{}
-}
-*/
+ */
 
 var games = []string{
 	"440",
@@ -75,7 +36,6 @@ var games = []string{
 	"1057240",
 	"552500",
 	"526870",
-	"1222730", // star wars squadons
 }
 
 const queueName = "FriendQueue"
@@ -95,6 +55,10 @@ const (
 	INVISIBLE = 1
 	VISIBLE   = 3
 )
+
+const maxSMSPrice = "0.05"
+
+const queueMessageDelay = 60 * 60 * 10 // 10 minutes
 
 var awsSess = session.Must(session.NewSession())
 var dyndb = dynamodb.New(awsSess)
@@ -238,23 +202,29 @@ func handleSQSEvent(message events.SQSMessage) error {
 		if err != nil {
 			return err
 		}
+	} else {
+		logger.Info("player switching to a different game", zap.String("old gameid", gameID), zap.String("new gameid", summaries[0].GameID))
 	}
 
 	return nil
 }
 
 func notify(name, game string) error {
+	logger.Info("notifying", zap.String("phoneNumber", phoneNumber))
 	_, err := snsSess.Publish(&sns.PublishInput{
 		PhoneNumber: aws.String(phoneNumber), // +1XXXXXXXXXX
 		Message:     aws.String(fmt.Sprintf("%s is playing %s", name, game)),
 		MessageAttributes: map[string]*sns.MessageAttributeValue{
 			"AWS.SNS.SMS.SMSType": {
+				DataType:    aws.String("String"),
 				StringValue: aws.String("Transactional"),
 			},
 			"AWS.SNS.SMS.MaxPrice": {
-				StringValue: aws.String("0.01"),
+				DataType:    aws.String("String"),
+				StringValue: aws.String(maxSMSPrice),
 			},
 			"AWS.SNS.SMS.SenderID": {
+				DataType:    aws.String("String"),
 				StringValue: aws.String("stmfriends"),
 			},
 		},
@@ -352,9 +322,6 @@ func handleCronEvent() error {
 
 	return nil
 }
-
-// const queueMessageDelay = 60 * 60 * 10 // 10 minutes
-const queueMessageDelay = 2 // dev TODO
 
 func queue(friend *FriendSummary) error {
 	logger.Info("queuing player", zap.Any("friend", friend))
