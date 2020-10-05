@@ -13,8 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"go.uber.org/zap"
-	"google.golang.org/appengine/mail"
-	"google.golang.org/appengine/urlfetch"
 )
 
 /*
@@ -45,50 +43,64 @@ $ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXX
 	}
 */
 
+var games = []string{
+	"440",
+	"945360",
+	"275850",
+	"1097150",
+	"1062830",
+	"477160",
+	"246900",
+	"312670",
+	"1057240",
+	"552500",
+	"526870",
+}
+
+const friendsTable = "friends-history"
+const (
+	// personastate
+	OFFLINE         = 0
+	ONLINE          = 1
+	BUSY            = 2
+	AWAY            = 3
+	SNOOZE          = 4
+	TRADING         = 5
+	LOOKING_TO_PLAY = 6
+
+	// visibility state
+	INVISIBLE = 1
+	VISIBLE   = 3
+)
+
 var awsSess = session.Must(session.NewSession())
 var dyndb = dynamodb.New(awsSess)
 
 var logger, _ = zap.NewProduction()
 
 type FriendSummary struct {
-	Steamid                  int64
-	Communityvisibilitystate uint
-	Profilestate             uint
-	Personaname              string
-	Lastlogoff               uint
-	Profileurl               string
-	Avatar                   string
-	Avatarmedium             string
-	Avatarfull               string
-	Personastate             uint
-	Realname                 string
-	Timecreated              uint
-	Personastateflags        uint
-	Gameextrainfo            string
-	Gameid                   uint
+	SteamID                  string `json:"steamid"`
+	CommunityVisibilityState uint   `json:"communityvisibilitystate"`
+	PersonaName              string `json:"personaname"`
+	LastLogOff               uint   `json:"lastlogoff"`
+	ProfileURL               string `json:"profileurl"`
+	PersonaState             uint   `json:"personastate"`
+	RealName                 string `json:"realname"`
+	GameExtraInfo            string `json:"gameextrainfo"`
+	GameID                   string `json:"gameid"`
 }
 
 type PlayerSummariesResult struct {
 	Response struct {
-		Players []*PlayerSummariesResult
+		Players []*FriendSummary
 	}
 }
 
-func getPlayerSteamIdsString() string {
-	ss := make([]string, len(steamids))
-	for i, s := range steamids {
-		ss[i] = fmt.Sprintf("%d", s)
-	}
-	return strings.Join(ss, ",")
-}
+func fetchPlayerSummaries(steamIDs []string) (*PlayerSummariesResult, error) {
 
-func fetchPlayerSummaries() (*PlayerSummariesResult, error) {
-
-	client := urlfetch.Client(c)
-
-	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", TOKEN, getPlayerSteamIdsString())
-	c.Debugf("steam API url: %v", url)
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", TOKEN, strings.Join(steamIDs, ","))
+	logger.Debug("steam API url", zap.String("url", url))
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failure of steam API: %v", err)
 	}
@@ -129,69 +141,88 @@ func handler(event Event) {
 	}
 }
 
-func handleCronEvent() {
+func queryPlayerHistories() ([]*FriendSummary, error) {
 
-	var err error
-	var summaries *PlayerSummariesResult
-RETRY:
-	for i := 0; i < 3; i++ {
-		summaries, err = fetchPlayerSummaries(c)
-		if err == nil {
-			break RETRY
-		}
-	}
+	output, err := dyndb.Scan(&dynamodb.ScanInput{
+		TableName: aws.String(friendsTable),
+	})
 	if err != nil {
-		logger.Error("failed to retrieve player status: %v", zap.Error(err))
-		return
+		return nil, err
 	}
 
-	for _, playerSummary := range summaries.Response.Players {
-
-		playerName := playerSummary.Personaname
-
-		online := playerSummary.Gameextrainfo == "Team Fortress 2"
-
-		if online {
-			logger.Debug("friend is Online", zap.String("player", playerName))
-		} else {
-			logger.Debug("friend is Offline", zap.String("player", playerName))
-		}
-
-		record, err := GetRecord(c, playerSummary.Steamid)
-		if err != nil {
-			logger.Error("failure to get record", zap.Error(err))
-			return
-		}
-
-		newlyOnline := online && !record.Online
-		newlyOffline := !online && record.Online
-
-		if newlyOnline || newlyOffline {
-			record.Online = online
-			err = SaveRecord(c, record)
-			if err != nil {
-				logger.Error("failure to save record", zap.Error(err))
-				return
-			}
-		}
-
-		if newlyOnline {
-			msg := &mail.Message{
-				Sender:  "admin@steamfriendfinder.appspotmail.com",
-				Subject: fmt.Sprintf("%s is playing Team Fortress 2", playerName),
-			}
-			if err := mail.SendToAdmins(c, msg); err != nil {
-				logger.Error("Couldn't send email", zap.Error(err))
-				return
-			}
-			logger.Debug("Sending email")
-		}
-
+	var frienstList = make([]*FriendSummary, 0)
+	err = dynamodbattribute.UnmarshalListOfMaps(output.Items, &frienstList)
+	if err != nil {
+		return nil, err
 	}
+
+	return frienstList, nil
 }
 
-const friendsTable = "friends-history"
+func stringInList(list []string, str string) bool {
+	for _, s2 := range list {
+		if str == s2 {
+			return true
+		}
+	}
+	return false
+}
 
+func handleCronEvent() error {
+
+	histories, err := queryPlayerHistories()
+	if err != nil {
+		return err
+	}
+
+	steamIDs := make([]string, 0)
+	steamIDtoHistory := make(map[string]*FriendSummary)
+	for _, history := range histories {
+		steamIDs = append(steamIDs, history.SteamID)
+		steamIDtoHistory[history.SteamID] = history
+	}
+
+	summaries, err := fetchPlayerSummaries(steamIDs)
+	if err != nil {
+		logger.Error("failed to retrieve player status: %v", zap.Error(err))
+		return err
+	}
+
+	for _, summary := range summaries.Response.Players {
+
+		// no longer visible to us.
+		if !(summary.CommunityVisibilityState == VISIBLE && summary.PersonaState == ONLINE) {
+			continue
+		}
+
+		// not in a game.
+		if summary.GameID == 0 {
+			continue
+		}
+
+		history := steamIDtoHistory[summary.SteamID]
+		if history == nil {
+			panic("no history for followed friend")
+		}
+
+		if history.GameID == summary.GameID {
+			// same game since last itme.
+			continue
+		}
+
+		if !stringInList(games, summary.GameID) {
+			// not one of our games.
+			continue
+		}
+
+		notify(summary.PersonaName, summary.GameExtraInfo)
+
+	}
+
+	// save records
+}
+
+/*
 func GetRecord(steamid int64) (*FriendSummary, error) {
 
 	output, err := dyndb.GetItem(&dynamodb.GetItemInput{
@@ -207,13 +238,11 @@ func GetRecord(steamid int64) (*FriendSummary, error) {
 	}
 
 	item := output.Item
-	var friend FriendSummary
 	if item == nil {
-		// always return a valid friend
-		friend.Steamid = steamid
-		return &friend, nil
+		return nil, errors.New("missing record for friend.")
 	}
 
+	var friend FriendSummary
 	err = dynamodbattribute.UnmarshalMap(item, &friend)
 	if err != nil {
 		return nil, err
@@ -221,6 +250,7 @@ func GetRecord(steamid int64) (*FriendSummary, error) {
 
 	return &friend, nil
 }
+*/
 
 func SaveRecord(friend *FriendSummary) error {
 

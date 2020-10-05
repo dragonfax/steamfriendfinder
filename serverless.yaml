@@ -14,11 +14,6 @@ resources:
       Type: "AWS::SQS::Queue"
       Properties:
         QueueName: "FriendQueue"
-    ConfigBucket:
-      Type: "AWS::S3::Bucket"
-      Propties:
-        BucketName: "steam-friends-config"
-        AccessControl: Private
     FriendsHistory:
       Type: AWS::DynamoDB::Table
       Properties:
