@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -15,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/secretsmanager"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"go.uber.org/zap"
@@ -75,6 +75,7 @@ var games = []string{
 	"1057240",
 	"552500",
 	"526870",
+	"1222730", // star wars squadons
 }
 
 const queueName = "FriendQueue"
@@ -99,6 +100,28 @@ var awsSess = session.Must(session.NewSession())
 var dyndb = dynamodb.New(awsSess)
 var sqsSess = sqs.New(awsSess)
 var snsSess = sns.New(awsSess)
+var ssmSess = secretsmanager.New(awsSess)
+
+var steamToken string
+var phoneNumber string
+
+func init() {
+	output, err := ssmSess.GetSecretValue(&secretsmanager.GetSecretValueInput{
+		SecretId: aws.String("steam_token"),
+	})
+	if err != nil {
+		panic(err)
+	}
+	steamToken = *output.SecretString
+
+	output, err = ssmSess.GetSecretValue(&secretsmanager.GetSecretValueInput{
+		SecretId: aws.String("phone_number"),
+	})
+	if err != nil {
+		panic(err)
+	}
+	phoneNumber = *output.SecretString
+}
 
 var queueURL *string
 
@@ -124,8 +147,7 @@ type PlayerSummariesResult struct {
 
 func fetchPlayerSummaries(steamIDs []string) ([]*FriendSummary, error) {
 
-	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", os.Getenv("STEAM_TOKEN"), strings.Join(steamIDs, ","))
-	logger.Debug("steam API url", zap.String("url", url))
+	url := fmt.Sprintf("http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%s", steamToken, strings.Join(steamIDs, ","))
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failure of steam API: %v", err)
@@ -154,17 +176,20 @@ type Event struct {
 	Type string `json:"detail-type"`
 }
 
-func handler(eventJS json.RawMessage) {
+func handler(eventJS json.RawMessage) error {
 
 	var event Event
 	err := json.Unmarshal(eventJS, &event)
 	if err != nil {
 		logger.Error("error while unmarshaling the incoming event", zap.Error(err), zap.String("event", string(eventJS)))
-		return
+		return nil
 	}
 
 	if event.Type == "Scheduled Event" {
-		handleCronEvent()
+		err = handleCronEvent()
+		if err != nil {
+			logger.Error("error in cron handler", zap.Error(err), zap.Error(err), zap.String("event", string(eventJS)))
+		}
 	} else {
 		logger.Info("incoming sqs event", zap.ByteString("event", eventJS))
 		// is SQS event
@@ -172,10 +197,12 @@ func handler(eventJS json.RawMessage) {
 		err := json.Unmarshal(eventJS, &events)
 		if err != nil {
 			logger.Error("error while unmarshaling the incoming SQSEvent", zap.Error(err), zap.String("event", string(eventJS)))
-			return
+			return nil
 		}
 		handleSQSEvents(events)
 	}
+
+	return nil
 }
 
 func handleSQSEvents(sqsEvent events.SQSEvent) {
@@ -218,7 +245,7 @@ func handleSQSEvent(message events.SQSMessage) error {
 
 func notify(name, game string) error {
 	_, err := snsSess.Publish(&sns.PublishInput{
-		PhoneNumber: aws.String(os.Getenv("PHONE_NUMBER")), // +1XXXXXXXXXX
+		PhoneNumber: aws.String(phoneNumber), // +1XXXXXXXXXX
 		Message:     aws.String(fmt.Sprintf("%s is playing %s", name, game)),
 		MessageAttributes: map[string]*sns.MessageAttributeValue{
 			"AWS.SNS.SMS.SMSType": {
@@ -311,7 +338,8 @@ func handleCronEvent() error {
 
 		err := queue(summary)
 		if err != nil {
-			return nil
+			// logger.Info("error occured while queiing", zap.Error(err))
+			return err
 		}
 
 	}
@@ -325,12 +353,15 @@ func handleCronEvent() error {
 	return nil
 }
 
-const queueMessageDelay = 60 * 60 * 10 // 10 minutes
+// const queueMessageDelay = 60 * 60 * 10 // 10 minutes
+const queueMessageDelay = 2 // dev TODO
 
 func queue(friend *FriendSummary) error {
+	logger.Info("queuing player", zap.Any("friend", friend))
 	_, err := sqsSess.SendMessage(&sqs.SendMessageInput{
 		DelaySeconds: aws.Int64(queueMessageDelay),
 		QueueUrl:     queueURL,
+		MessageBody:  aws.String("nothing"),
 		MessageAttributes: map[string]*sqs.MessageAttributeValue{
 			"SteamID": &sqs.MessageAttributeValue{
 				DataType:    aws.String("String"),
@@ -372,13 +403,13 @@ func SaveFriend(friend *FriendSummary) error {
 	}
 
 	var expressions = make([]string, 0)
+	av2 := make(map[string]*dynamodb.AttributeValue)
 	for key, value := range av {
-		delete(av, key)
 		if key == "steamid" {
 			continue
 		}
 
-		av[":"+key] = value
+		av2[":"+key] = value
 		expressions = append(expressions, fmt.Sprintf("%s = :%s", key, key))
 	}
 	updateExpression := "SET " + strings.Join(expressions, ", ")
@@ -391,10 +422,11 @@ func SaveFriend(friend *FriendSummary) error {
 			},
 		},
 		UpdateExpression:          &updateExpression,
-		ExpressionAttributeValues: av,
+		ExpressionAttributeValues: av2,
 	})
 
 	if err != nil {
+		logger.Error("error updating dynamodb", zap.Error(err), zap.String("update expression", updateExpression), zap.Any("attribute values", av2))
 		return err
 	}
 

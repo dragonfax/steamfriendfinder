@@ -5,6 +5,7 @@ functions:
     handler: main
     events:
       - schedule: rate(1 minute)
+        enabled: false
       - sqs:
         arn:
           Fn::GetAtt:
@@ -46,6 +47,15 @@ provider:
         - 'sqs:DeleteMessageBatch'
         - 'sqs:GetQueueUrl'
       Resource: '*'
+    - Effect: Allow
+      Action:
+        - 'secretsmanager:Get*'
+      Resource: '*'
+    - Effect: Allow
+      Action:
+        - 'dynamodb:*'
+      Resource: '*'
+
 
 package:
   exclude:
