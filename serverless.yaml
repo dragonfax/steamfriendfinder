@@ -1,10 +1,10 @@
 service: steamfinder
 
-function:
+functions:
   steamfinder:
     handler: main
     events:
-      - schedule: rate(5 minutes)
+      - schedule: rate(1 minute)
       - sqs:
         arn:
           Fn::GetAtt:
@@ -22,17 +22,33 @@ resources:
         TableName: friends-history
         AttributeDefinitions:
           - AttributeName: steamid
-            AttributeType: N
+            AttributeType: S
         KeySchema:
           - AttributeName: steamid
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
+
 provider:
   name: aws
   region: us-west-2
+  runtime: go1.x
   iamRoleStatements:
     - Effect: Allow	
       Action:	
         - 'sns:Publish'	
       Resource: '*'	
+    - Effect: Allow
+      Action:
+        - 'sqs:GetQueueAttributes'
+        - 'sqs:SendMessage'
+        - 'sqs:ReceiveMessage'
+        - 'sqs:DeleteMessage'
+        - 'sqs:DeleteMessageBatch'
+        - 'sqs:GetQueueUrl'
+      Resource: '*'
 
+package:
+  exclude:
+    - ./**
+  include:
+    - ./main

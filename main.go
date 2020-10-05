@@ -46,6 +46,21 @@ $ curl 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=XXX
 			}
 		]
 	}
+
+aws lambda cron event
+{
+	"version":"0",
+	"id":"b7a98e0c-aba9-7cfd-fa82-932bc343eb95",
+	"detail-type":"Scheduled Event",
+	"source":"aws.events",
+	"account":"623157150824",
+	"time":"2020-10-05T03:50:53Z",
+	"region":"us-west-2",
+	"resources":[
+		"arn:aws:events:us-west-2:623157150824:rule/steamfinder-dev-SteamfinderEventsRuleSchedule1-H1C1DNQNW6UY"
+	],
+	"detail":{}
+}
 */
 
 var games = []string{
@@ -136,11 +151,10 @@ func fetchPlayerSummaries(steamIDs []string) ([]*FriendSummary, error) {
 }
 
 type Event struct {
-	Records json.RawMessage
+	Type string `json:"detail-type"`
 }
 
-func handler(eventJS []byte) {
-	logger.Info("incoming event", zap.String("event", string(eventJS)))
+func handler(eventJS json.RawMessage) {
 
 	var event Event
 	err := json.Unmarshal(eventJS, &event)
@@ -149,9 +163,10 @@ func handler(eventJS []byte) {
 		return
 	}
 
-	if event.Records == nil {
+	if event.Type == "Scheduled Event" {
 		handleCronEvent()
 	} else {
+		logger.Info("incoming sqs event", zap.ByteString("event", eventJS))
 		// is SQS event
 		var events events.SQSEvent
 		err := json.Unmarshal(eventJS, &events)
@@ -372,7 +387,7 @@ func SaveFriend(friend *FriendSummary) error {
 		TableName: aws.String(friendsTable),
 		Key: map[string]*dynamodb.AttributeValue{
 			"steamid": {
-				N: aws.String(friend.SteamID),
+				S: aws.String(friend.SteamID),
 			},
 		},
 		UpdateExpression:          &updateExpression,
