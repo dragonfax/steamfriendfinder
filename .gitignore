@@ -1,2 +1,4 @@
 secrets.go
 *.swp
+main
+.serverless/
