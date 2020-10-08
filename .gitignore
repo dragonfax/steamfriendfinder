@@ -2,3 +2,5 @@ secrets.go
 *.swp
 main
 .serverless/
+.packages
+.dart_tool/
