@@ -4,5 +4,12 @@ environment:
 dependencies:
   aws_lambda_dart_runtime:
     git: https://github.com/awslabs/aws-lambda-dart-runtime.git
+  aws_sqs_api:
+  aws_sns_api:
+  aws_dynamodb_api:
+  aws_secretsmanager_api:
+  logging:
+  json_annotation:
 dev_dependencies:
   build_runner:
+  json_serializable:

@@ -2,7 +2,7 @@ service: steamfinder
 
 functions:
   steamfinder:
-    handler: main
+    handler: bootstrap
     events:
       - schedule: rate(5 minutes)
         enabled: true
@@ -32,7 +32,7 @@ resources:
 provider:
   name: aws
   region: us-west-2
-  runtime: go1.x
+  runtime: provided
   iamRoleStatements:
     - Effect: Allow	
       Action:	

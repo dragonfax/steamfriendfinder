@@ -1,10 +1,12 @@
 
-main: main.go
+generate:
+	docker run -v $(PWD):/app -w /app -it google/dart pub get
+	docker run -v $(PWD):/app -w /app -it google/dart pub run build_runner build
 
-deploy: main
-	GOOS=linux CGO_ENABLED=0 go build -o main main.go
+bootstrap: main.dart
+	# 'bootstrap' is intentional, see aws lambda custom runtimes
+	docker run -v $(PWD):/app -w /app -it google/dart dart2native main.dart -o bootstrap
+
+deploy: bootstrap
 	sls deploy
 
-dart:
-	# 'bootstrap' is intentional, see aws lambda custom runtimes
-	docker run -v $PWD:/app -w /app -it google/dart dart2native main.dart -o bootstrap
