@@ -49,13 +49,3 @@ class Friend {
 
 }
 
-@JsonSerializable()
-class PlayerSummariesResponse {
-  List<Friend> players;
-}
-
-@JsonSerializable()
-class PlayerSummariesResult {
-  PlayerSummariesResponse response;
-}
-
