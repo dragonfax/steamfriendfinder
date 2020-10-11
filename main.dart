@@ -190,8 +190,6 @@ void main() async {
 
   queueURL = ( await sqs.getQueueUrl(queueName: queueName)).queueUrl;
 
-  /// The Runtime is a singleton.
-  /// You can define the handlers as you wish.
   Runtime()
     ..registerHandler<AwsCloudwatchEvent>("steam.Cron", receiveCron)
     ..registerHandler<AwsSQSEvent>("steam.SQS", receiveSQS)
