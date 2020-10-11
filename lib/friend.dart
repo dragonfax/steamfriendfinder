@@ -75,10 +75,17 @@ class Friend {
     return UpdateReturn(updateExpression, attributes);
   }
 
-  save(String table, DynamoDB dynamodb) {
+
+  static Future<Friend> read(String table, DynamoDB dynamodb, String steamid) async {
+    var key = { "steamid": AttributeValue(s: steamid) };
+    var dyn = ( await dynamodb.getItem(key: key, tableName: table)).item;
+    return Friend.fromDynamoDB(dyn);
+  }
+
+  save(String table, DynamoDB dynamodb) async {
     var key = { "steamid": AttributeValue(s: this.steamID) };
     var r = toDynamoDBUpdate();
-    dynamodb.updateItem(key: key, tableName: table, updateExpression: r.updateExpression, expressionAttributeValues: r.attributes);
+    await dynamodb.updateItem(key: key, tableName: table, updateExpression: r.updateExpression, expressionAttributeValues: r.attributes);
   }
 
 }

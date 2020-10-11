@@ -2,9 +2,10 @@ import 'package:aws_lambda_dart_runtime/aws_lambda_dart_runtime.dart';
 import "package:aws_lambda_dart_runtime/runtime/context.dart";
 import 'package:aws_secretsmanager_api/secretsmanager-2017-10-17.dart';
 import "package:aws_sqs_api/sqs-2012-11-05.dart";
-import "package:aws_sns_api/sns-2010-03-31.dart";
+import "package:aws_sns_api/sns-2010-03-31.dart" as snslib;
 import "package:aws_dynamodb_api/dynamodb-2012-08-10.dart";
-// import "enums.dart";
+
+import "enums.dart";
 import "lib/friend.dart";
 import "dart:io";
 import "dart:convert";
@@ -24,6 +25,7 @@ var games = <String>[
 ];
 
 const queueName = "FriendQueue";
+const friendsTable = "friends-history";
 
 const maxSMSPrice = "0.05";
 
@@ -32,9 +34,9 @@ const queueMessageDelay = 60 * 60 * 10;  // 10 minutes
 const awsRegion = "us-west-2";
 
 DynamoDB dynamodb;
-SNS sns;
+snslib.SNS sns;
 SQS sqs;
-SSM ssm;
+SecretsManager ssm;
 
 String steamToken;
 String phoneNumber;
@@ -55,10 +57,53 @@ Future<List<Friend>> fetchPlayerSummaries(List<String> steamIDs) async {
   return map['response']['players'];
 }
 
+Future<List<Friend>> queryPlayerHistories() async {
+  var items = ( await dynamodb.scan(tableName: friendsTable)).items;
+  var friends = <Friend>[];
+  for ( final item in items ) {
+    friends.add(Friend.fromDynamoDB(item));
+  }
+  return friends;
+}
+
+handleCron() async {
+
+  var histories = await queryPlayerHistories();
+
+  var summaries = await fetchPlayerSummaries(histories.map((history) => history.steamID));
+
+  for ( final summary in summaries ) {
+    if ( summary.communityVisibleState != Visibility.VISIBLE || summary.personaState != PersonaState.ONLINE ) {
+      continue;
+    }
+
+    if ( summary.gameID == "" ) {
+      continue;
+    }
+
+    var history = histories.firstWhere((h) => h.steamID == summary.steamID);
+    if ( history == null ) {
+      throw("no history for followed friend");
+    }
+
+    if ( history.gameID == summary.gameID ) {
+      continue;
+    }
+
+    if ( ! games.contains(summary.gameID) ) {
+      continue;
+    }
+
+    queue(summary);
+  }
+
+  for ( final friend in summaries ) {
+    friend.save(friendsTable, dynamodb);
+  }
+}
+
 Future<InvocationResult> receiveCron(Context context, AwsCloudwatchEvent event) async {
-
-
-
+  await handleCron();
   return InvocationResult( context.requestId, "OK");
 }
 
@@ -90,15 +135,15 @@ notify(String name, String game) async {
     message: "$name is playing $game", 
     phoneNumber: phoneNumber, 
     messageAttributes: {
-      "AWS.SNS.SMS.SMSType": MessageAttributeValue(
+      "AWS.SNS.SMS.SMSType": snslib.MessageAttributeValue(
         dataType: "String", 
         stringValue: "Transactional"
       ),
-      "AWS.SNS.SMS.MaxPrice": MessageAttributeValue(
+      "AWS.SNS.SMS.MaxPrice": snslib.MessageAttributeValue(
         dataType: "String",
         stringValue: maxSMSPrice
       ),
-      "AWS.SNS.SMS.SenderID": MessageAttributeValue(
+      "AWS.SNS.SMS.SenderID": snslib.MessageAttributeValue(
         dataType: "String",
         stringValue: "stmfriends"
       )
@@ -106,18 +151,44 @@ notify(String name, String game) async {
   );
 }
 
+queue(Friend friend) async {
+  sqs.sendMessage(
+    messageBody: "nothing", 
+    queueUrl: queueURL, 
+    delaySeconds: queueMessageDelay,
+    messageAttributes: {
+      "SteamID": MessageAttributeValue(
+        dataType: "String",
+        stringValue: friend.steamID
+      ),
+      "Name": MessageAttributeValue(
+        dataType: "String",
+        stringValue: friend.personaName
+      ),
+      "GameID": MessageAttributeValue(
+        dataType: "String", 
+        stringValue: friend.gameID
+      ),
+      "Game": MessageAttributeValue(
+        dataType: "String",
+        stringValue: friend.gameExtraInfo
+      )
+    }
+  );
+}
+
 void main() async {
 
-  var awsCreds = AwsClientCredentials( );
+  var awsCreds = AwsClientCredentials(accessKey: Platform.environment['AWS_ACCESS_KEY_ID'], secretKey: Platform.environment['AWS_ACCESS_KEY_ID']);
   dynamodb = DynamoDB(region: awsRegion, credentials: awsCreds);
-  sns = SNS(region: awsRegion, credentials: awsCreds);
+  sns = snslib.SNS(region: awsRegion, credentials: awsCreds);
   sqs = SQS(region: awsRegion, credentials: awsCreds);
   ssm = SecretsManager(region:awsRegion, credentials: awsCreds);
 
   steamToken = (await ssm.getSecretValue(secretId: "steam_token")).secretString;
   phoneNumber = (await ssm.getSecretValue(secretId: "phone_number")).secretString;
 
-  queueURL = await sqs.getQueueUrl(queueName).queueUrl;
+  queueURL = ( await sqs.getQueueUrl(queueName: queueName)).queueUrl;
 
   /// The Runtime is a singleton.
   /// You can define the handlers as you wish.
