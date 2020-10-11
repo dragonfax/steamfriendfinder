@@ -5,7 +5,7 @@ import "package:aws_sqs_api/sqs-2012-11-05.dart";
 import "package:aws_sns_api/sns-2010-03-31.dart";
 import "package:aws_dynamodb_api/dynamodb-2012-08-10.dart";
 // import "enums.dart";
-import "friend.dart";
+import "lib/friend.dart";
 import "dart:io";
 import "dart:convert";
 
