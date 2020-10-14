@@ -118,15 +118,15 @@ Future<InvocationResult> receiveSQS(context, AwsSQSEvent event) async {
 
 handleSQS(AwsSQSEventRecord record) async {
 
-  var steamID = record.messageAttributes["steamid"];
+  var steamID = record.messageAttributes[Friend.steamIDKey];
   var summaries = await fetchPlayerSummaries(<String>[steamID]);
   if ( summaries.length == 0 ) {
     throw "no response for player ${steamID}";
   }
   var summary = summaries[0];
 
-  if ( record.messageAttributes["gameID"] == summary.gameID ) {
-    notify(record.messageAttributes["name"], record.messageAttributes["game"]);
+  if ( record.messageAttributes[Friend.gameIDKey] == summary.gameID ) {
+    notify(record.messageAttributes[Friend.personaNameKey], record.messageAttributes[Friend.gameExtraInfoKey]);
   }
 }
 
@@ -157,19 +157,19 @@ queue(Friend friend) async {
     queueUrl: queueURL, 
     delaySeconds: queueMessageDelay,
     messageAttributes: {
-      "SteamID": MessageAttributeValue(
+      Friend.steamIDKey: MessageAttributeValue(
         dataType: "String",
         stringValue: friend.steamID
       ),
-      "Name": MessageAttributeValue(
+      Friend.personaNameKey: MessageAttributeValue(
         dataType: "String",
         stringValue: friend.personaName
       ),
-      "GameID": MessageAttributeValue(
+      Friend.gameIDKey: MessageAttributeValue(
         dataType: "String", 
         stringValue: friend.gameID
       ),
-      "Game": MessageAttributeValue(
+      Friend.gameExtraInfoKey: MessageAttributeValue(
         dataType: "String",
         stringValue: friend.gameExtraInfo
       )
@@ -179,7 +179,7 @@ queue(Friend friend) async {
 
 void main() async {
 
-  var awsCreds = AwsClientCredentials(accessKey: Platform.environment['AWS_ACCESS_KEY_ID'], secretKey: Platform.environment['AWS_ACCESS_KEY_ID']);
+  var awsCreds = AwsClientCredentials(accessKey: Platform.environment['AWS_ACCESS_KEY_ID'], secretKey: Platform.environment['AWS_SECRET_ACCESS_KEY']);
   dynamodb = DynamoDB(region: awsRegion, credentials: awsCreds);
   sns = snslib.SNS(region: awsRegion, credentials: awsCreds);
   sqs = SQS(region: awsRegion, credentials: awsCreds);

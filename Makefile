@@ -1,11 +1,11 @@
 
 generate:
-	docker run -v $(PWD):/app -w /app -it google/dart pub get
-	docker run -v $(PWD):/app -w /app -it google/dart pub run build_runner build
+	docker run -v $(PWD):/app -w /app -it google/dart ./docker-generate.sh
 
 bootstrap: main.dart
 	# 'bootstrap' is intentional, see aws lambda custom runtimes
-	docker run -v $(PWD):/app -w /app -it google/dart dart2native main.dart -o bootstrap
+	# though serverless may fix this.
+	docker run -v $(PWD):/app -w /app -it google/dart ./docker-build.sh
 
 deploy: bootstrap
 	sls deploy

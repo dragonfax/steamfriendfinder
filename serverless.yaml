@@ -4,8 +4,8 @@ functions:
   steamfinder:
     handler: bootstrap
     events:
-      - schedule: rate(5 minutes)
-        enabled: true
+      - schedule: rate(1 minute)
+        enabled: false
       - sqs:
         arn:
           Fn::GetAtt:
@@ -61,4 +61,4 @@ package:
   exclude:
     - ./**
   include:
-    - ./main
+    - ./bootstrap

@@ -15,31 +15,43 @@ class Friend {
 
   Friend();
 
-  @JsonKey(name: "steamid")
+  // used to make these JSON keys typesafe
+  // as they use several places. (until dynamodb unmarshal generation)
+  static const steamIDKey = "steamid"; 
+  static const communityVisibleStateKey = "communityvisibilitystate";
+  static const personaNameKey = "personaname";
+  static const lastLogOffKey = "lastlogoff";
+  static const profileURLKey = "profileurl";
+  static const personaStateKey = "personastate";
+  static const realNameKey = "realname";
+  static const gameExtraInfoKey = "gameextrainfo";
+  static const gameIDKey = "gameid";
+
+  @JsonKey(name: steamIDKey)
   String steamID;
 
-  @JsonKey(name: "communityvisibilitystate")
+  @JsonKey(name: communityVisibleStateKey)
   int communityVisibleState;
 
-  @JsonKey(name: "personaname")
+  @JsonKey(name: personaNameKey)
   String personaName;
 
-  @JsonKey(name: "lastlogoff")
+  @JsonKey(name: lastLogOffKey)
   int lastLogOff;
 
-  @JsonKey(name: "profileurl")
+  @JsonKey(name: profileURLKey)
   String profileURL;
 
-  @JsonKey(name: "personastate")
+  @JsonKey(name: personaStateKey)
   int personaState;
 
-  @JsonKey(name: "realname")
+  @JsonKey(name: realNameKey)
   String realName;
 
-  @JsonKey(name: "gameextrainfo")
+  @JsonKey(name: gameExtraInfoKey)
   String gameExtraInfo;
 
-  @JsonKey(name: "gameid")
+  @JsonKey(name: gameIDKey)
   String gameID;
 
   factory Friend.fromJson(Map<String, dynamic> json) => _$FriendFromJson(json);
@@ -48,42 +60,42 @@ class Friend {
 
   factory Friend.fromDynamoDB(Map<String, AttributeValue> dyn) {
     var friend = Friend();
-    friend.steamID = dyn["steamid"].s;
-    friend.communityVisibleState = int.parse(dyn["communityvisibilitystate"].n);
-    friend.personaName = dyn["personaname"].s;
-    friend.lastLogOff = int.parse(dyn["lastlogoff"].n);
-    friend.profileURL = dyn["profileurl"].s;
-    friend.personaState = int.parse(dyn["personastate"].n);
-    friend.realName = dyn["realname"].s;
-    friend.gameExtraInfo = dyn["gameextrainfo"].s;
-    friend.gameID = dyn["gameid"].s;
+    friend.steamID = dyn[steamIDKey].s;
+    friend.communityVisibleState = int.parse(dyn[communityVisibleStateKey].n);
+    friend.personaName = dyn[personaNameKey].s;
+    friend.lastLogOff = int.parse(dyn[lastLogOffKey].n);
+    friend.profileURL = dyn[profileURLKey].s;
+    friend.personaState = int.parse(dyn[personaStateKey].n);
+    friend.realName = dyn[realNameKey].s;
+    friend.gameExtraInfo = dyn[gameExtraInfoKey].s;
+    friend.gameID = dyn[gameIDKey].s;
     return friend;
   }
 
   UpdateReturn toDynamoDBUpdate() {
     var attributes = {
-      ":communityvisibilitystate": this.communityVisibleState,
-      ":personaname": this.personaName,
-      ":lastlogoff": this.lastLogOff,
-      ":profileurl": this.profileURL,
-      ":personastate": this.personaState,
-      ":realname": this.realName,
-      ":gameextrainfo": this.gameExtraInfo,
-      ":gameid": this.gameID
+      ":" + communityVisibleStateKey: this.communityVisibleState,
+      ":" + personaNameKey: this.personaName,
+      ":" + lastLogOffKey: this.lastLogOff,
+      ":" + profileURLKey: this.profileURL,
+      ":" + personaStateKey: this.personaState,
+      ":" + realNameKey: this.realName,
+      ":" + gameExtraInfoKey: this.gameExtraInfo,
+      ":" + gameIDKey: this.gameID
     };
-    var updateExpression = "SET communityvisibilitystate = :communityvisibilitystate, personaname = :personaname, lastlogoff = :lastlogoff, profileurl = :profileurl, personastate = :personastate, realname = :realname, gameextrainfo = :gameextrainfo, gameid = :gameid";
+    var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = $gameExtraInfoKey:, $gameIDKey = :$gameIDKey";
     return UpdateReturn(updateExpression, attributes);
   }
 
 
   static Future<Friend> read(String table, DynamoDB dynamodb, String steamid) async {
-    var key = { "steamid": AttributeValue(s: steamid) };
+    var key = { steamIDKey: AttributeValue(s: steamid) };
     var dyn = ( await dynamodb.getItem(key: key, tableName: table)).item;
     return Friend.fromDynamoDB(dyn);
   }
 
   save(String table, DynamoDB dynamodb) async {
-    var key = { "steamid": AttributeValue(s: this.steamID) };
+    var key = { steamIDKey: AttributeValue(s: this.steamID) };
     var r = toDynamoDBUpdate();
     await dynamodb.updateItem(key: key, tableName: table, updateExpression: r.updateExpression, expressionAttributeValues: r.attributes);
   }

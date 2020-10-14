@@ -4,3 +4,4 @@ main
 .serverless/
 .packages
 .dart_tool/
+bootstrap
