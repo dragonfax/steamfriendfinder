@@ -29,7 +29,7 @@ const friendsTable = "friends-history";
 
 const maxSMSPrice = "0.05";
 
-const queueMessageDelay = 60 * 60 * 10;  // 10 minutes
+const queueMessageDelay = 60 * 10;  // 10 minutes
 
 const awsRegion = "us-west-2";
 
