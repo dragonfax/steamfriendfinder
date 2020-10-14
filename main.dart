@@ -179,7 +179,10 @@ queue(Friend friend) async {
 
 void main() async {
 
-  var awsCreds = AwsClientCredentials(accessKey: Platform.environment['AWS_ACCESS_KEY_ID'], secretKey: Platform.environment['AWS_SECRET_ACCESS_KEY']);
+  var accessKey = Platform.environment['AWS_ACCESS_KEY_ID'];
+  var secretKey = Platform.environment['AWS_SECRET_ACCESS_KEY'];
+  var sessionToken = Platform.environment['AWS_SESSION_TOKEN'];
+  var awsCreds = AwsClientCredentials(accessKey: accessKey, secretKey: secretKey, sessionToken: sessionToken);
   dynamodb = DynamoDB(region: awsRegion, credentials: awsCreds);
   sns = snslib.SNS(region: awsRegion, credentials: awsCreds);
   sqs = SQS(region: awsRegion, credentials: awsCreds);
