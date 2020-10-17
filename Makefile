@@ -10,5 +10,5 @@ bootstrap: *.dart lib/*.dart pubspec.*
 	docker run -v $(PWD):/app -w /app -it google/dart ./docker-build.sh
 
 deploy: bootstrap
-	sls deploy
+	AWS_PROFILE=personal sls deploy
 

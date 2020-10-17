@@ -2,10 +2,10 @@ service: steamfinder
 
 functions:
   steamfinder:
-    handler: bootstrap
+    handler: steam.Cron
     events:
-      - schedule: rate(5 minutes)
-        enabled: true
+      - schedule: rate(1 minute)
+        enabled: false
       - sqs:
         arn:
           Fn::GetAtt:
@@ -34,7 +34,7 @@ provider:
   region: us-west-2
   runtime: provided
   iamRoleStatements:
-    - Effect: Allow	
+    - Effect: Allow
       Action:	
         - 'sns:Publish'	
       Resource: '*'	

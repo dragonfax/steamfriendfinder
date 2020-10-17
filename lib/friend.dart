@@ -60,30 +60,31 @@ class Friend {
 
   factory Friend.fromDynamoDB(Map<String, AttributeValue> dyn) {
     var friend = Friend();
-    friend.steamID = dyn[steamIDKey].s;
-    friend.communityVisibleState = int.parse(dyn[communityVisibleStateKey].n);
-    friend.personaName = dyn[personaNameKey].s;
-    friend.lastLogOff = int.parse(dyn[lastLogOffKey].n);
-    friend.profileURL = dyn[profileURLKey].s;
-    friend.personaState = int.parse(dyn[personaStateKey].n);
-    friend.realName = dyn[realNameKey].s;
-    friend.gameExtraInfo = dyn[gameExtraInfoKey].s;
-    friend.gameID = dyn[gameIDKey].s;
+    friend.steamID = dyn[steamIDKey]?.s;
+    friend.communityVisibleState = int.parse(dyn[communityVisibleStateKey]?.n ?? "0");
+    friend.personaName = dyn[personaNameKey]?.s;
+    friend.lastLogOff = int.parse(dyn[lastLogOffKey]?.n ?? "0");
+    friend.profileURL = dyn[profileURLKey]?.s;
+    friend.personaState = int.parse(dyn[personaStateKey]?.n ?? "0");
+    friend.realName = dyn[realNameKey]?.s;
+    friend.gameExtraInfo = dyn[gameExtraInfoKey]?.s;
+    friend.gameID = dyn[gameIDKey]?.s;
     return friend;
   }
 
   UpdateReturn toDynamoDBUpdate() {
     var attributes = {
-      ":" + communityVisibleStateKey: this.communityVisibleState,
-      ":" + personaNameKey: this.personaName,
-      ":" + lastLogOffKey: this.lastLogOff,
-      ":" + profileURLKey: this.profileURL,
-      ":" + personaStateKey: this.personaState,
-      ":" + realNameKey: this.realName,
-      ":" + gameExtraInfoKey: this.gameExtraInfo,
-      ":" + gameIDKey: this.gameID
+      ":" + communityVisibleStateKey: AttributeValue(n: this.communityVisibleState.toString()),
+      ":" + personaNameKey: AttributeValue(s: this.personaName),
+      ":" + lastLogOffKey: AttributeValue(n: this.lastLogOff.toString()),
+      ":" + profileURLKey: AttributeValue(s: this.profileURL),
+      ":" + personaStateKey: AttributeValue(n: this.personaState.toString()),
+      ":" + realNameKey: AttributeValue(s: this.realName),
+      ":" + gameExtraInfoKey: AttributeValue(s: this.gameExtraInfo),
+      ":" + gameIDKey: AttributeValue(s: this.gameID),
+      ":updated": AttributeValue(s: DateTime.now().toIso8601String())
     };
-    var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = $gameExtraInfoKey:, $gameIDKey = :$gameIDKey";
+    var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = $gameExtraInfoKey:, $gameIDKey = :$gameIDKey, updated = :updated";
     return UpdateReturn(updateExpression, attributes);
   }
 
@@ -97,7 +98,12 @@ class Friend {
   save(String table, DynamoDB dynamodb) async {
     var key = { steamIDKey: AttributeValue(s: this.steamID) };
     var r = toDynamoDBUpdate();
-    await dynamodb.updateItem(key: key, tableName: table, updateExpression: r.updateExpression, expressionAttributeValues: r.attributes);
+    await dynamodb.updateItem(
+       key: key, 
+       tableName: table, 
+       updateExpression: r.updateExpression, 
+       expressionAttributeValues: r.attributes
+     );
   }
 
 }

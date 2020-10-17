@@ -5,7 +5,6 @@ import "package:aws_sqs_api/sqs-2012-11-05.dart";
 import "package:aws_sns_api/sns-2010-03-31.dart" as snslib;
 import "package:aws_dynamodb_api/dynamodb-2012-08-10.dart";
 
-import "enums.dart";
 import "lib/friend.dart";
 import "dart:io";
 import "dart:convert";
@@ -22,6 +21,8 @@ var games = <String>[
 	"1057240",
 	"552500",
 	"526870",
+  "105600", // terraria
+  "582010" // monster hunter world
 ];
 
 const queueName = "FriendQueue";
@@ -43,7 +44,7 @@ String phoneNumber;
 
 String queueURL;
 
-Future<List<Friend>> fetchPlayerSummaries(List<String> steamIDs) async {
+Future<List<Friend>> fetchPlayerSummaries(Iterable<String> steamIDs) async {
 
   final url = "http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=$steamToken&steamids=${steamIDs.join(',')}";
   final request = await HttpClient().getUrl(Uri.parse(url));
@@ -54,7 +55,7 @@ Future<List<Friend>> fetchPlayerSummaries(List<String> steamIDs) async {
   final js = await utf8.decodeStream(response);
   // convert js to friends
   final map = json.decode(js);
-  return map['response']['players'];
+  return [ for ( var f in map['response']['players']) Friend.fromJson(f as Map<String,dynamic>) ];
 }
 
 Future<List<Friend>> queryPlayerHistories() async {
@@ -73,9 +74,6 @@ handleCron() async {
   var summaries = await fetchPlayerSummaries(histories.map((history) => history.steamID));
 
   for ( final summary in summaries ) {
-    if ( summary.communityVisibleState != Visibility.VISIBLE || summary.personaState != PersonaState.ONLINE ) {
-      continue;
-    }
 
     if ( summary.gameID == "" ) {
       continue;
@@ -103,14 +101,24 @@ handleCron() async {
 }
 
 Future<InvocationResult> receiveCron(Context context, AwsCloudwatchEvent event) async {
-  await handleCron();
+  print("received cron event");
+  //try {
+    await handleCron();
+  //} catch(e) {
+    //print(e);
+  //}
   return InvocationResult( context.requestId, "OK");
 }
 
-Future<InvocationResult> receiveSQS(context, AwsSQSEvent event) async {
+Future<InvocationResult> receiveSQS(Context context, AwsSQSEvent event) async {
+  print("received sqs event");
 
-  for ( var record in event.records ) {
-    await handleSQS(record);
+  try {
+    for ( var record in event.records ) {
+      await handleSQS(record);
+    }
+  } catch(e) {
+    print(e);
   }
 
   return InvocationResult( context.requestId, "OK");
@@ -118,20 +126,23 @@ Future<InvocationResult> receiveSQS(context, AwsSQSEvent event) async {
 
 handleSQS(AwsSQSEventRecord record) async {
 
-  var steamID = record.messageAttributes[Friend.steamIDKey];
+  print(record.toString());
+
+  var attributes = record.messageAttributes as Map<String,String>;
+  var steamID = attributes[Friend.steamIDKey];
   var summaries = await fetchPlayerSummaries(<String>[steamID]);
-  if ( summaries.length == 0 ) {
+  if ( summaries.isEmpty ) {
     throw "no response for player ${steamID}";
   }
   var summary = summaries[0];
 
   if ( record.messageAttributes[Friend.gameIDKey] == summary.gameID ) {
-    notify(record.messageAttributes[Friend.personaNameKey], record.messageAttributes[Friend.gameExtraInfoKey]);
+    notify(attributes[Friend.personaNameKey], attributes[Friend.gameExtraInfoKey]);
   }
 }
 
 notify(String name, String game) async {
-  sns.publish(
+  await sns.publish(
     message: "$name is playing $game", 
     phoneNumber: phoneNumber, 
     messageAttributes: {
@@ -152,7 +163,7 @@ notify(String name, String game) async {
 }
 
 queue(Friend friend) async {
-  sqs.sendMessage(
+  await sqs.sendMessage(
     messageBody: "nothing", 
     queueUrl: queueURL, 
     delaySeconds: queueMessageDelay,
@@ -193,9 +204,9 @@ void main() async {
 
   queueURL = ( await sqs.getQueueUrl(queueName: queueName)).queueUrl;
 
-  Runtime()
+  var runtime = Runtime()
     ..registerHandler<AwsCloudwatchEvent>("steam.Cron", receiveCron)
-    ..registerHandler<AwsSQSEvent>("steam.SQS", receiveSQS)
-    ..invoke();
+    ..registerHandler<AwsSQSEvent>("steam.SQS", receiveSQS);
+  await runtime.invoke();
 }
 
