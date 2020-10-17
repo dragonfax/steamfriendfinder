@@ -145,5 +145,5 @@ AttributeValue marshalAttributeValue(Object o) {
     return AttributeValue(m: m);
   }
 
-  return null;
+  throw("unknown type to marshal ${o.runtimeType} value $o");
 }
