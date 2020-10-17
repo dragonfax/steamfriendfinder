@@ -74,15 +74,15 @@ class Friend {
 
   UpdateReturn toDynamoDBUpdate() {
     var attributes = {
-      ":" + communityVisibleStateKey: AttributeValue(n: this.communityVisibleState.toString()),
-      ":" + personaNameKey: AttributeValue(s: this.personaName),
-      ":" + lastLogOffKey: AttributeValue(n: this.lastLogOff.toString()),
-      ":" + profileURLKey: AttributeValue(s: this.profileURL),
-      ":" + personaStateKey: AttributeValue(n: this.personaState.toString()),
-      ":" + realNameKey: AttributeValue(s: this.realName),
-      ":" + gameExtraInfoKey: AttributeValue(s: this.gameExtraInfo),
-      ":" + gameIDKey: AttributeValue(s: this.gameID),
-      ":updated": AttributeValue(s: DateTime.now().toIso8601String())
+      ":" + communityVisibleStateKey: marshalAttributeValue(this.communityVisibleState?.toString()),
+      ":" + personaNameKey: marshalAttributeValue(this.personaName),
+      ":" + lastLogOffKey: marshalAttributeValue(this.lastLogOff?.toString()),
+      ":" + profileURLKey: marshalAttributeValue(this.profileURL),
+      ":" + personaStateKey: marshalAttributeValue(this.personaState?.toString()),
+      ":" + realNameKey: marshalAttributeValue(this.realName),
+      ":" + gameExtraInfoKey: marshalAttributeValue(this.gameExtraInfo),
+      ":" + gameIDKey: marshalAttributeValue(this.gameID),
+      ":updated": marshalAttributeValue(DateTime.now().toIso8601String())
     };
     var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = $gameExtraInfoKey:, $gameIDKey = :$gameIDKey, updated = :updated";
     return UpdateReturn(updateExpression, attributes);
@@ -108,3 +108,42 @@ class Friend {
 
 }
 
+
+AttributeValue marshalAttributeValue(Object o) {
+
+  if ( o == null ) {
+    return AttributeValue(nullValue: true);
+  }
+  if ( o is num) {
+    return AttributeValue(n: o.toString());
+  }
+  if ( o is String ) {
+    return AttributeValue(s: o);
+  }
+  if ( o is bool ) {
+    return AttributeValue(boolValue: o);
+  }
+
+  if ( o is List ) {
+    var l = List<AttributeValue>();
+    for ( var i in o ) {
+      l.add(marshalAttributeValue(i));
+    }
+    return AttributeValue(l: l);
+  }
+
+  if ( o is Map ) {
+    var m = Map<String, AttributeValue>();
+
+    var om = o as Map<String, Object>;
+    for ( var key in om.keys) {
+      var value = om[key];
+      var marshalledValue = marshalAttributeValue(value);
+      m[key] = marshalledValue;
+    }
+
+    return AttributeValue(m: m);
+  }
+
+  return null;
+}
