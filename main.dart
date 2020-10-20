@@ -20,15 +20,13 @@ var games = <String>[
 	"312670",
 	"1057240",
 	"552500",
-	"526870",
-  "105600", // terraria
-  "582010" // monster hunter world
+	"526870"
 ];
 
 const queueName = "FriendQueue";
 const friendsTable = "friends-history";
 
-const maxSMSPrice = "0.05";
+// const maxSMSPrice = "0.05";
 
 const queueMessageDelay = 60 * 10;  // 10 minutes
 
@@ -102,23 +100,17 @@ handleCron() async {
 
 Future<InvocationResult> receiveCron(Context context, AwsCloudwatchEvent event) async {
   print("received cron event");
-  //try {
-    await handleCron();
-  //} catch(e) {
-    //print(e);
-  //}
+
+  await handleCron();
+
   return InvocationResult( context.requestId, "OK");
 }
 
 Future<InvocationResult> receiveSQS(Context context, AwsSQSEvent event) async {
   print("received sqs event");
 
-  try {
-    for ( var record in event.records ) {
-      await handleSQS(record);
-    }
-  } catch(e) {
-    print(e);
+  for ( var record in event.records ) {
+    await handleSQS(record);
   }
 
   return InvocationResult( context.requestId, "OK");
@@ -126,22 +118,22 @@ Future<InvocationResult> receiveSQS(Context context, AwsSQSEvent event) async {
 
 handleSQS(AwsSQSEventRecord record) async {
 
-  print(record.toString());
+  var attributes = record.messageAttributes;
+  var message = FriendMessage.fromMessageAttributes(attributes);
 
-  var attributes = record.messageAttributes as Map<String,String>;
-  var steamID = attributes[Friend.steamIDKey];
-  var summaries = await fetchPlayerSummaries(<String>[steamID]);
+  var summaries = await fetchPlayerSummaries(<String>[message.steamID]);
   if ( summaries.isEmpty ) {
-    throw "no response for player ${steamID}";
+    throw "no response for player ${message.steamID}";
   }
   var summary = summaries[0];
 
-  if ( record.messageAttributes[Friend.gameIDKey] == summary.gameID ) {
-    notify(attributes[Friend.personaNameKey], attributes[Friend.gameExtraInfoKey]);
+  if ( message.gameID == summary.gameID ) {
+    await notify(message.name, message.game);
   }
 }
 
 notify(String name, String game) async {
+  print("sending notification");
   await sns.publish(
     message: "$name is playing $game", 
     phoneNumber: phoneNumber, 
@@ -150,10 +142,10 @@ notify(String name, String game) async {
         dataType: "String", 
         stringValue: "Transactional"
       ),
-      "AWS.SNS.SMS.MaxPrice": snslib.MessageAttributeValue(
+      /* "AWS.SNS.SMS.MaxPrice": snslib.MessageAttributeValue(
         dataType: "String",
         stringValue: maxSMSPrice
-      ),
+      ), */
       "AWS.SNS.SMS.SenderID": snslib.MessageAttributeValue(
         dataType: "String",
         stringValue: "stmfriends"
@@ -163,6 +155,7 @@ notify(String name, String game) async {
 }
 
 queue(Friend friend) async {
+  print("queuing message");
   await sqs.sendMessage(
     messageBody: "nothing", 
     queueUrl: queueURL, 
@@ -204,9 +197,9 @@ void main() async {
 
   queueURL = ( await sqs.getQueueUrl(queueName: queueName)).queueUrl;
 
-  var runtime = Runtime()
+  Runtime()
     ..registerHandler<AwsCloudwatchEvent>("steam.Cron", receiveCron)
-    ..registerHandler<AwsSQSEvent>("steam.SQS", receiveSQS);
-  await runtime.invoke();
+    ..registerHandler<AwsSQSEvent>("steam.SQS", receiveSQS)
+    ..invoke();
 }
 

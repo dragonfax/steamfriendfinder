@@ -84,7 +84,7 @@ class Friend {
       ":" + gameIDKey: marshalAttributeValue(this.gameID),
       ":updated": marshalAttributeValue(DateTime.now().toIso8601String())
     };
-    var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = $gameExtraInfoKey:, $gameIDKey = :$gameIDKey, updated = :updated";
+    var updateExpression = "SET $communityVisibleStateKey = :$communityVisibleStateKey, $personaNameKey = :$personaNameKey, $lastLogOffKey = :$lastLogOffKey, $profileURLKey = :$profileURLKey, $personaStateKey = :$personaStateKey, $realNameKey = :$realNameKey, $gameExtraInfoKey = :$gameExtraInfoKey, $gameIDKey = :$gameIDKey, updated = :updated";
     return UpdateReturn(updateExpression, attributes);
   }
 
@@ -146,4 +146,25 @@ AttributeValue marshalAttributeValue(Object o) {
   }
 
   throw("unknown type to marshal ${o.runtimeType} value $o");
+}
+
+
+class FriendMessage {
+  final String steamID;
+  final String name;
+  final String gameID;
+  final String game;
+
+  static const stringValueKey = "stringValue";
+
+  FriendMessage(this.steamID, this.name, this.gameID, this.game);
+
+  factory FriendMessage.fromMessageAttributes(dynamic attributes) {
+    var steamID = attributes[Friend.steamIDKey][stringValueKey] as String;
+    var gameID = attributes[Friend.gameIDKey][stringValueKey] as String;
+    var name = attributes[Friend.personaNameKey][stringValueKey] as String;
+    var game = attributes[Friend.gameExtraInfoKey][stringValueKey] as String;
+
+    return FriendMessage(steamID, name, gameID, game);
+  }
 }
