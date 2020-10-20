@@ -90,11 +90,11 @@ handleCron() async {
       continue;
     }
 
-    queue(summary);
+    await queue(summary);
   }
 
   for ( final friend in summaries ) {
-    friend.save(friendsTable, dynamodb);
+    await friend.save(friendsTable, dynamodb);
   }
 }
 
