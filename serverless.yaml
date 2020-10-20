@@ -4,13 +4,17 @@ functions:
   steamfinder:
     handler: steam.Cron
     events:
-      - schedule: rate(1 minute)
-        enabled: false
+      - schedule: 
+          rate: rate(1 minute)
+          enabled: true
+  steamtexter:
+    handler: steam.SQS
+    events:
       - sqs:
-        arn:
-          Fn::GetAtt:
-            - FriendQueue
-            - Arn
+          arn:
+            Fn::GetAtt:
+              - FriendQueue
+              - Arn
 resources:
   Resources:
     FriendQueue:
@@ -35,9 +39,9 @@ provider:
   runtime: provided
   iamRoleStatements:
     - Effect: Allow
-      Action:	
+      Action:
         - 'sns:Publish'	
-      Resource: '*'	
+      Resource: '*'
     - Effect: Allow
       Action:
         - 'sqs:GetQueueAttributes'
