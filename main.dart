@@ -52,8 +52,8 @@ Future<List<Friend>> fetchPlayerSummaries(Iterable<String> steamIDs) async {
   }
   final js = await utf8.decodeStream(response);
   // convert js to friends
-  final map = json.decode(js);
-  return [ for ( var f in map['response']['players']) Friend.fromJson(f as Map<String,dynamic>) ];
+  final List<Map<String,String>>friendsList = List.from(json.decode(js)['response']['players'] as List);
+  return [ for ( var f in friendsList) Friend.fromJson(f) ];
 }
 
 Future<List<Friend>> queryPlayerHistories() async {
