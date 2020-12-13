@@ -10,17 +10,23 @@ import "dart:io";
 import "dart:convert";
 
 var games = <String>[
-	"440",
-	"945360",
-	"275850",
-	"1097150",
-	"1062830",
-	"477160",
-	"246900",
-	"312670",
-	"1057240",
-	"552500",
-	"526870"
+	"440", // Team Fortress 2
+	"945360", // Among Us
+	"275850", // No Man's Sky
+	"1097150", // Fall Guys
+	"1062830", // Embr
+	"477160", // Human: Fall Flat
+	"246900", // Viscera Cleanup Detail
+	"312670", // Strange Brigade
+	"1057240", // Crucible
+	"552500", // Vermintide 2
+	"526870", // Satisfactory
+  "381210", // Dead by Daylight
+  "286160", // Tabletop Simulator
+  "1072420", // Dragon Quest Builders 2
+  "361420", // Astroneer
+  "728880", // Overcooked 2
+  "548430", // Deep Rock Galactic
 ];
 
 const queueName = "FriendQueue";
