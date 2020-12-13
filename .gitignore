@@ -5,3 +5,4 @@ main
 .packages
 .dart_tool/
 bootstrap
+secrets.dart

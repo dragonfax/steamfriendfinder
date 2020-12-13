@@ -8,6 +8,7 @@ import "package:aws_dynamodb_api/dynamodb-2012-08-10.dart";
 import "lib/friend.dart";
 import "dart:io";
 import "dart:convert";
+import "secrets.dart";
 
 var games = <String>[
 	"440", // Team Fortress 2
@@ -41,10 +42,6 @@ const awsRegion = "us-west-2";
 DynamoDB dynamodb;
 snslib.SNS sns;
 SQS sqs;
-SecretsManager ssm;
-
-String steamToken;
-String phoneNumber;
 
 String queueURL;
 
@@ -196,10 +193,6 @@ void main() async {
   dynamodb = DynamoDB(region: awsRegion, credentials: awsCreds);
   sns = snslib.SNS(region: awsRegion, credentials: awsCreds);
   sqs = SQS(region: awsRegion, credentials: awsCreds);
-  ssm = SecretsManager(region:awsRegion, credentials: awsCreds);
-
-  steamToken = (await ssm.getSecretValue(secretId: "steam_token")).secretString;
-  phoneNumber = (await ssm.getSecretValue(secretId: "phone_number")).secretString;
 
   queueURL = ( await sqs.getQueueUrl(queueName: queueName)).queueUrl;
 
